@@ -31,10 +31,12 @@ TCPClient::~TCPClient() {
     WSACleanup();
 }
 
-int TCPClient::sendWideStringBuffer(const std::wstring& buffer) {
-    std::string utf8Data;
-    int utf8Length = WideCharToMultiByte(CP_UTF8, 0, buffer.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    int bytesSent = send(clientSocket, utf8Data.c_str(), utf8Length, 0);
+int TCPClient::sendWideStringBuffer(const std::wstring& buffer) {    
+
+    int requiredSize = WideCharToMultiByte(CP_UTF8, 0, buffer.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string utf8Data(requiredSize, 0);
+    WideCharToMultiByte(CP_UTF8, 0, buffer.c_str(), -1, reinterpret_cast<LPSTR>(&utf8Data[0]), requiredSize, nullptr, nullptr);
+    int bytesSent = send(clientSocket, utf8Data.c_str(), requiredSize, 0);
 
     if (bytesSent == SOCKET_ERROR) {
         printf("Failed to send data to the server.\n");
